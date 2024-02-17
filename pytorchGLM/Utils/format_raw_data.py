@@ -409,7 +409,7 @@ def load_aligned_data(file_dict, params, reprocess=False):
     elif params['train_egocentric']:
         train_data = '_train_egocentric'
 
-    model_file = params['save_dir'] / 'ModelData_{}_dt{:03d}_rawWorldCam_{:d}ds.h5'.format(params['data_name'],int(params['model_dt']*1000),int(params['downsamp_vid']))
+    model_file = params['save_dir'] / 'ModelData_{}_dt{:03d}_rawWorldCam_{:d}ds{}.h5'.format(params['data_name'],int(params['model_dt']*1000),int(params['downsamp_vid']),train_data)
     if (model_file.exists()) & (reprocess==False):
         model_data = ioh5.load(model_file)
     else:
