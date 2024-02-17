@@ -36,5 +36,3 @@ This code will then create directories following this convension.
 
 ## Parameters
 To view and edit parameters see pytorchGLM/parameters.py file 
-
-## Test Commit
