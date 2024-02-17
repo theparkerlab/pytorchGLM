@@ -66,6 +66,29 @@ def format_raw_data(file_dict, params, medfiltbins=11, **kwargs):
         top_speed = top_data.TOP1_props[:,0].data
         topT = top_data.timestamps.data.copy() # read in time timestamps
     #     top_vid = np.uint8(top_data['TOP1_video']) # read in top video
+        
+        if params['train_dir']:
+            #Reading in head direction data
+            top_direction_data = np.array(top_data.TOP1_pts.sel(point_loc=['left_ear_x','left_ear_y','right_ear_x','right_ear_y','center_neck_x','center_neck_y','center_haunch_x','center_haunch_y']))
+            top_head_direction = np.add(np.arctan2((top_direction_data[:,1] - top_direction_data[:,3]),(top_direction_data[:,0] - top_direction_data[:,2])),np.deg2rad(90))
+        
+            #Reading in body direction data
+            top_body_direction = np.arctan2((top_direction_data[:,5] - top_direction_data[:,7]),(top_direction_data[:,4] - top_direction_data[:,6]))
+        
+            #reading in mouse position
+            top_mouse_position_x = top_direction_data[:,4]
+            top_mouse_position_y = top_direction_data[:,5]
+
+        if params['train_egocentric']:
+            top_direction_data = np.array(top_data.TOP1_pts.sel(point_loc=['left_ear_x','left_ear_y','right_ear_x','right_ear_y','center_neck_x','center_neck_y','center_haunch_x','center_haunch_y']))
+            center_neck_x = top_direction_data[:,4]
+            center_neck_y = top_direction_data[:,5]
+            center_haunch_x = top_direction_data[:,6]
+            center_haunch_y = top_direction_data[:,7]
+            ebc_data = calaculate_ebc(center_neck_x,center_neck_y,center_haunch_x,center_haunch_y)
+            ebc_data = ebc_data[:,:14,:]
+            ebc_data_flatten = ebc_data.reshape(-1,ebc_data.shape[1]*ebc_data.shape[2])
+        
         # clear from memory
         del top_data
         gc.collect()
@@ -269,7 +292,14 @@ def format_raw_data(file_dict, params, medfiltbins=11, **kwargs):
                     'vid_sm':   world_vid_sm,
                 },
                 }
-
+    if params['train_dir']:
+        raw_data['top']['head_dir'] = top_head_direction
+        raw_data['top']['body_dir'] = top_body_direction
+        raw_data['top']['mouse_x'] = top_mouse_position_x
+        raw_data['top']['mouse_y'] = top_mouse_position_y
+    
+    if params['train_egocentric']:
+        raw_data['top']['egocentric'] = ebc_data_flatten
     return raw_data, goodcells
 
 
@@ -315,6 +345,21 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
                     else:
                         interp = interp1d(raw_data[key0][key0+'TS'],pd.DataFrame(raw_data[key0][key1]).interpolate(limit_direction='both').to_numpy().squeeze(),axis=0, bounds_error=False)
                         model_data['model_'+ key1] = interp(model_t+model_dt/2)
+    for key0 in raw_data.keys():
+            for key1 in raw_data[key0].keys():
+                if 'egocentric' in key1:
+                    ego_data = raw_data['top']['egocentric']
+                    mean_ego = np.mean(ego_data,axis=0) 
+                    std_ego = np.std(ego_data,axis=0)
+                    ego_data_z = (ego_data - mean_ego)/std_ego
+                    raw_data['top']['egocentric'] = ego_data_z
+                    align_t = raw_data['top']['topTS']
+                    model_t = np.linspace(0,np.nanmax(align_t),raw_data['top']['egocentric'].shape[0])
+                    interp = interp1d(raw_data[key0][key0+'TS'],pd.DataFrame(raw_data[key0][key1]).interpolate(limit_direction='both').to_numpy().squeeze(),axis=0, bounds_error=False)
+                    temp = interp(model_t+0.016/2)
+                    model_data['model_'+key1] = temp
+                
+
     model_data['model_t'] = model_t
     if ('acc' in raw_data.keys()) & (np.size(raw_data['acc']['gz'])>0):
         model_data['model_active'] = np.convolve(np.abs(model_data['model_gz']), np.ones(int(1/model_dt)), 'same') / len(np.ones(int(1/model_dt)))
@@ -328,6 +373,21 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
             model_nsp[:,i],bins = np.histogram(goodcells.at[ind,'spikeT'],bins)
         model_data['model_nsp'] = model_nsp
         model_data['unit_nums'] = goodcells.index.values
+
+    if 'model_egocentric' in model_data:
+        n_units = len(goodcells)
+        model_dt = 0.016
+        model_t = np.linspace(0,np.nanmax(align_t),raw_data['top']['egocentric'].shape[0])
+        model_nsp = np.zeros((len(model_t),n_units))
+        bins = np.append(model_t,model_t[-1]+model_dt)
+        for i,ind in enumerate(goodcells.index):
+            model_nsp[:,i],bins = np.histogram(goodcells.at[ind,'spikeT'],bins)
+        model_data['model_nsp'] = model_nsp
+        model_data['unit_nums'] = goodcells.index.values
+        model_data['model_t'] = model_t
+        if ('acc' in raw_data.keys()) & (np.size(raw_data['acc']['gz'])>0):
+            model_data['model_active'] = np.convolve(np.abs(model_data['model_gz']), np.ones(int(1/model_dt)), 'same') / len(np.ones(int(1/model_dt)))
+
 
     return model_data
 
@@ -343,6 +403,11 @@ def load_aligned_data(file_dict, params, reprocess=False):
     Returns:
         model_data (dict): returns dictionary with time aligned model data
     """
+    train_data = ""
+    if params['train_dir']:
+        train_data = '_train_dir'
+    elif params['train_egocentric']:
+        train_data = '_train_egocentric'
 
     model_file = params['save_dir'] / 'ModelData_{}_dt{:03d}_rawWorldCam_{:d}ds.h5'.format(params['data_name'],int(params['model_dt']*1000),int(params['downsamp_vid']))
     if (model_file.exists()) & (reprocess==False):
@@ -532,26 +597,47 @@ def load_Kfold_data(data,params,train_idx,test_idx):
     Returns:
         data (dict): data dictionary with train/test splits
     """
-    data['train_vid'] = data['model_vid_sm'][train_idx]
-    data['test_vid'] = data['model_vid_sm'][test_idx]
-    data['train_nsp'] = shuffle(data['model_nsp'][train_idx],random_state=42) if params['do_shuffle'] else data['model_nsp'][train_idx]
-    data['test_nsp'] = shuffle(data['model_nsp'][test_idx],random_state=42) if params['do_shuffle'] else data['model_nsp'][test_idx]
-    data['train_th'] = data['model_th'][train_idx]
-    data['test_th'] = data['model_th'][test_idx]
-    data['train_phi'] = data['model_phi'][train_idx]
-    data['test_phi'] = data['model_phi'][test_idx]
-    data['train_roll'] = data['model_roll'][train_idx] if params['free_move'] else []
-    data['test_roll'] = data['model_roll'][test_idx] if params['free_move'] else []
-    data['train_pitch'] = data['model_pitch'][train_idx]
-    data['test_pitch'] = data['model_pitch'][test_idx]
-    data['train_t'] = data['model_t'][train_idx]
-    data['test_t'] = data['model_t'][test_idx]
-    data['train_gz'] = data['model_gz'][train_idx] if params['free_move'] else []
-    data['test_gz'] = data['model_gz'][test_idx] if params['free_move'] else []
-    data['train_speed'] = data['model_speed'][train_idx] if (params['free_move']) else []
-    data['test_speed'] = data['model_speed'][test_idx] if (params['free_move']) else []
-    data['train_eyerad'] = data['model_eyerad'][train_idx] #if ((params['use_spdpup'])&params['free_move']) else []
-    data['test_eyerad'] = data['model_eyerad'][test_idx] #if ((params['use_spdpup'])&params['free_move']) else []
+    if params['train_egocentric'] ==False:
+        data['train_vid'] = data['model_vid_sm'][train_idx]
+        data['test_vid'] = data['model_vid_sm'][test_idx]
+
+        data['train_nsp'] = shuffle(data['model_nsp'][train_idx],random_state=42) if params['do_shuffle'] else data['model_nsp'][train_idx]
+        data['test_nsp'] = shuffle(data['model_nsp'][test_idx],random_state=42) if params['do_shuffle'] else data['model_nsp'][test_idx]
+        data['train_th'] = data['model_th'][train_idx]
+        data['test_th'] = data['model_th'][test_idx]
+        data['train_phi'] = data['model_phi'][train_idx]
+        data['test_phi'] = data['model_phi'][test_idx]
+        data['train_roll'] = data['model_roll'][train_idx] if params['free_move'] else []
+        data['test_roll'] = data['model_roll'][test_idx] if params['free_move'] else []
+        data['train_pitch'] = data['model_pitch'][train_idx]
+        data['test_pitch'] = data['model_pitch'][test_idx]
+        data['train_t'] = data['model_t'][train_idx]
+        data['test_t'] = data['model_t'][test_idx]
+        data['train_gz'] = data['model_gz'][train_idx] if params['free_move'] else []
+        data['test_gz'] = data['model_gz'][test_idx] if params['free_move'] else []
+        data['train_speed'] = data['model_speed'][train_idx] if (params['free_move']) else []
+        data['test_speed'] = data['model_speed'][test_idx] if (params['free_move']) else []
+        data['train_eyerad'] = data['model_eyerad'][train_idx] #if ((params['use_spdpup'])&params['free_move']) else []
+        data['test_eyerad'] = data['model_eyerad'][test_idx] #if ((params['use_spdpup'])&params['free_move']) else []
+        if params['train_dir']:
+            data['train_head_dir'] = data['model_head_dir'][train_idx]
+            data['test_head_dir'] = data['model_head_dir'][test_idx]
+
+            data['train_body_dir'] = data['model_body_dir'][train_idx]
+            data['test_body_dir'] = data['model_body_dir'][test_idx]
+
+            data['train_mouse_x'] = data['model_mouse_x'][train_idx]
+            data['test_mouse_x'] = data['model_mouse_x'][test_idx]
+
+            data['train_mouse_y'] = data['model_mouse_y'][train_idx]
+            data['test_mouse_y'] = data['model_mouse_y'][test_idx]
+    
+    if params['train_egocentric']:
+        data['train_egocentric'] = data['model_egocentric'][train_idx]
+        data['test_egocentric'] = data['model_egocentric'][test_idx]
+        data['train_nsp'] = shuffle(data['model_nsp'][train_idx],random_state=42) if params['do_shuffle'] else data['model_nsp'][train_idx]
+        data['test_nsp'] = shuffle(data['model_nsp'][test_idx],random_state=42) if params['do_shuffle'] else data['model_nsp'][test_idx]
+    
     return data
 
 
