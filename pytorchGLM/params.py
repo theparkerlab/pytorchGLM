@@ -179,6 +179,9 @@ def load_params(args,ModelID,file_dict=None,exp_dir_name=None,nKfold=0,debug=Fal
         'shift_hidden':             20,
         'shifter_5050_run':         args['shifter_5050_run'],
         'crop_input':               5 if args['crop_input']==True else 0,
+        'direction_vars':           ['head_dir','body_dir','mouse_x','mouse_y'],
+        'train_dir':                False,
+        'train_egocentric':         False,
     }
 
     params['nt_glm_lag']=len(params['lag_list']) # number of timesteps for model fits
