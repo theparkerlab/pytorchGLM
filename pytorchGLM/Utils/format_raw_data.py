@@ -328,7 +328,7 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
     model_data = {}
     for key0 in raw_data.keys():
             for key1 in raw_data[key0].keys():
-                if ('TS' not in key1) & (np.size(raw_data[key0][key1])>0):
+                if ('TS' not in key1) & (np.size(raw_data[key0][key1])>0) & ('egocentric' not in key1):
                     if 'vid' in key0: # Z score video then interpolate
                         std_im = np.std(raw_data[key0][key1], axis=0, dtype=float)
                         img_norm = ((raw_data[key0][key1]-np.mean(raw_data[key0][key1],axis=0,dtype=float))/std_im).astype(float)
