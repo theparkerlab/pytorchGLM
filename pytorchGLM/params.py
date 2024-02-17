@@ -235,7 +235,9 @@ def make_network_config(params,single_trial=None,custom=False):
         network_config (dict): dictionary with hyperparameters
     """
     network_config = {}
+    
     network_config['in_features']   = params['nk']
+    
     network_config['Ncells']        = params['Ncells']
     network_config['initW']         = params['initW']
     network_config['optimizer']         = params['optimizer']
@@ -246,10 +248,10 @@ def make_network_config(params,single_trial=None,custom=False):
         network_config['shift_out']     = params['shift_out']
         network_config['LinMix']        = params['LinMix']
         network_config['pos_features']  = params['pos_features']
-        network_config['lr_shift']      = 1e-2
-    network_config['lr_w']          = 1e-3
-    network_config['lr_b']          = 1e-3
-    network_config['lr_m']          = 1e-3
+        network_config['lr_shift']      = 0.01
+    network_config['lr_w']          = 0.001
+    network_config['lr_b']          = 0.001
+    network_config['lr_m']          = 0.001
     network_config['single_trial']  = single_trial
     if params['NoL1']:
         network_config['L1_alpha']  = None

@@ -65,6 +65,8 @@ def get_modeltype(params,load_for_training=False):
     if load_for_training==False:
         if params['ModelID'] == 0:
             model_type = 'Pytorch_Mot'
+            if params['train_egocentric']:
+                model_type = 'Pytorch_Ego'
         elif params['ModelID'] == 1:
             model_type = 'Pytorch_Vis'
         elif params['ModelID'] == 2:
@@ -97,6 +99,8 @@ def get_modeltype(params,load_for_training=False):
             model_type = model_type + '_EyeOnly'
         else:
             model_type = model_type + '_HeadOnly'
+    if params['train_dir']:
+        model_type = model_type+'_trainDir'
     if params['NoShifter']:
         model_type = model_type + 'NoShifter'
 
@@ -341,7 +345,7 @@ def setup_model_training(model,params,network_config):
     check_names = []
     param_list = []
     if params['train_shifter']:
-        param_list.append({'params': list(model.shifter_nn.parameters()),'lr': network_config['lr_shift'],'weight_decay':.0001})
+        param_list.append({'params': list(model.shifter_nn.parameters()),'lr': network_config['lr_shift'],'weight_decay':0.0001})
     for name,p in model.named_parameters():
         if params['ModelID']<2:
             if ('Cell_NN' in name):

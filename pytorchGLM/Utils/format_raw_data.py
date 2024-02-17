@@ -66,7 +66,7 @@ def format_raw_data(file_dict, params, medfiltbins=11, **kwargs):
         top_speed = top_data.TOP1_props[:,0].data
         topT = top_data.timestamps.data.copy() # read in time timestamps
     #     top_vid = np.uint8(top_data['TOP1_video']) # read in top video
-        
+
         if params['train_dir']:
             #Reading in head direction data
             top_direction_data = np.array(top_data.TOP1_pts.sel(point_loc=['left_ear_x','left_ear_y','right_ear_x','right_ear_y','center_neck_x','center_neck_y','center_haunch_x','center_haunch_y']))
@@ -88,7 +88,6 @@ def format_raw_data(file_dict, params, medfiltbins=11, **kwargs):
             ebc_data = calaculate_ebc(center_neck_x,center_neck_y,center_haunch_x,center_haunch_y)
             ebc_data = ebc_data[:,:14,:]
             ebc_data_flatten = ebc_data.reshape(-1,ebc_data.shape[1]*ebc_data.shape[2])
-        
         # clear from memory
         del top_data
         gc.collect()
@@ -300,6 +299,7 @@ def format_raw_data(file_dict, params, medfiltbins=11, **kwargs):
     
     if params['train_egocentric']:
         raw_data['top']['egocentric'] = ebc_data_flatten
+
     return raw_data, goodcells
 
 
@@ -324,6 +324,7 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
     ##### Set up model interpolated time #####
     model_t = np.arange(0,np.max(align_t), model_dt)
 
+    
     ##### Interpolate raw data #####
     model_data = {}
     for key0 in raw_data.keys():
@@ -342,9 +343,11 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
                             model_vid_sm[i,:] = model_vid
                         model_vid_sm[np.isnan(model_vid_sm)]=0
                         model_data['model_'+ key1] = model_vid_sm
+                    
                     else:
                         interp = interp1d(raw_data[key0][key0+'TS'],pd.DataFrame(raw_data[key0][key1]).interpolate(limit_direction='both').to_numpy().squeeze(),axis=0, bounds_error=False)
                         model_data['model_'+ key1] = interp(model_t+model_dt/2)
+    
     for key0 in raw_data.keys():
             for key1 in raw_data[key0].keys():
                 if 'egocentric' in key1:
@@ -358,11 +361,11 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
                     interp = interp1d(raw_data[key0][key0+'TS'],pd.DataFrame(raw_data[key0][key1]).interpolate(limit_direction='both').to_numpy().squeeze(),axis=0, bounds_error=False)
                     temp = interp(model_t+0.016/2)
                     model_data['model_'+key1] = temp
-                
-
+    
     model_data['model_t'] = model_t
     if ('acc' in raw_data.keys()) & (np.size(raw_data['acc']['gz'])>0):
         model_data['model_active'] = np.convolve(np.abs(model_data['model_gz']), np.ones(int(1/model_dt)), 'same') / len(np.ones(int(1/model_dt)))
+
 
     # get spikes / rate
     if goodcells is not None:
@@ -373,7 +376,7 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
             model_nsp[:,i],bins = np.histogram(goodcells.at[ind,'spikeT'],bins)
         model_data['model_nsp'] = model_nsp
         model_data['unit_nums'] = goodcells.index.values
-
+    
     if 'model_egocentric' in model_data:
         n_units = len(goodcells)
         model_dt = 0.016
@@ -388,11 +391,10 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
         if ('acc' in raw_data.keys()) & (np.size(raw_data['acc']['gz'])>0):
             model_data['model_active'] = np.convolve(np.abs(model_data['model_gz']), np.ones(int(1/model_dt)), 'same') / len(np.ones(int(1/model_dt)))
 
-
     return model_data
 
-
 def load_aligned_data(file_dict, params, reprocess=False):
+    
     """ Load time aligned data from file or process raw data and return formatted data
 
     Args:
@@ -403,6 +405,7 @@ def load_aligned_data(file_dict, params, reprocess=False):
     Returns:
         model_data (dict): returns dictionary with time aligned model data
     """
+
     train_data = ""
     if params['train_dir']:
         train_data = '_train_dir'
@@ -410,11 +413,9 @@ def load_aligned_data(file_dict, params, reprocess=False):
         train_data = '_train_egocentric'
 
     model_file = params['save_dir'] / 'ModelData_{}_dt{:03d}_rawWorldCam_{:d}ds{}.h5'.format(params['data_name'],int(params['model_dt']*1000),int(params['downsamp_vid']),train_data)
+
     if (model_file.exists()) & (reprocess==False):
         model_data = ioh5.load(model_file)
-    else:
-        raw_data, goodcells = format_raw_data(file_dict,params)
-        model_data = interp_raw_data(raw_data,raw_data['vid']['vidTS'],model_dt=params['model_dt'],goodcells=goodcells)
         if params['free_move']:
             ##### Saving average and std of parameters for centering and scoring across conditions #####
             FM_move_avg = np.zeros((2,6))
@@ -424,11 +425,28 @@ def load_aligned_data(file_dict, params, reprocess=False):
             FM_move_avg[:,3] = np.array([np.nanmean(model_data['model_pitch']),np.nanstd(model_data['model_pitch'])])
             FM_move_avg[:,4] = np.array([np.nanmean(model_data['model_speed']),np.nanmax(model_data['model_speed'])])
             FM_move_avg[:,5] = np.array([np.nanmean(model_data['model_eyerad']),np.nanmax(model_data['model_eyerad'])])
+            
             np.save(params['save_dir_fm']/'FM_MovAvg_{}_dt{:03d}.npy'.format(params['data_name'],int(params['model_dt']*1000)),FM_move_avg)
-        ephys_file = params['save_dir'] / 'RawEphysData_{}.h5'.format(params['data_name'])
-        goodcells.to_hdf(ephys_file,key='goodcells', mode='w')
-        ioh5.save(model_file, model_data)
+    else:
+        
+            raw_data, goodcells = format_raw_data(file_dict,params)
+            model_data = interp_raw_data(raw_data,raw_data['vid']['vidTS'],model_dt=params['model_dt'],goodcells=goodcells)
+            if params['free_move']:
+                ##### Saving average and std of parameters for centering and scoring across conditions #####
+                FM_move_avg = np.zeros((2,6))
+                FM_move_avg[:,0] = np.array([np.nanmean(model_data['model_th']),np.nanstd(model_data['model_th'])])
+                FM_move_avg[:,1] = np.array([np.nanmean(model_data['model_phi']),np.nanstd(model_data['model_phi'])])
+                FM_move_avg[:,2] = np.array([np.nanmean(model_data['model_roll']),np.nanstd(model_data['model_roll'])])
+                FM_move_avg[:,3] = np.array([np.nanmean(model_data['model_pitch']),np.nanstd(model_data['model_pitch'])])
+                FM_move_avg[:,4] = np.array([np.nanmean(model_data['model_speed']),np.nanmax(model_data['model_speed'])])
+                FM_move_avg[:,5] = np.array([np.nanmean(model_data['model_eyerad']),np.nanmax(model_data['model_eyerad'])])
+                np.save(params['save_dir_fm']/'FM_MovAvg_{}_dt{:03d}.npy'.format(params['data_name'],int(params['model_dt']*1000)),FM_move_avg)
+            
+            ephys_file = params['save_dir'] / 'RawEphysData_{}.h5'.format(params['data_name'])
+            goodcells.to_hdf(ephys_file,key='goodcells', mode='w')
+            ioh5.save(model_file, model_data)
     return model_data
+
 
 
 def format_data(data, params, frac=.1, shifter_train_size=.5, test_train_size=.75, do_norm=True, NKfold=1, thresh_cells=True, cut_inactive=True, move_medwin=11,**kwargs):
@@ -466,17 +484,21 @@ def format_data(data, params, frac=.1, shifter_train_size=.5, test_train_size=.7
 
 
     data['raw_nsp'] = data['model_nsp'].copy()
-    if cut_inactive:
+    if cut_inactive and params['train_egocentric']==False:
         ##### return only active data #####
         for key in data.keys():
-            if (key != 'model_nsp') & (key != 'model_active') & (key != 'unit_nums') & (key != 'model_vid_sm_shift'):
+            #if (key != 'model_nsp') & (key != 'model_active') & (key != 'unit_nums') & (key != 'model_vid_sm_shift'): original(changed to preprocess shifted data)
+            if (key != 'model_nsp') & (key != 'model_active') & (key != 'unit_nums') & (key != 'model_vid_sm_shift') :
                 if len(data[key])>0:
                     data[key] = data[key][good_idxs] # interp_nans(data[key]).astype(float)
             elif (key == 'model_nsp'):
                 data[key] = data[key][good_idxs]
-            elif (key == 'unit_nums') | (key == 'model_vis_sm_shift'):
+            elif (key == 'unit_nums') | (key == 'model_vid_sm_shift'):
                 pass
     
+    if cut_inactive and params['train_egocentric']==True:
+        data['model_egocentric'] = data['model_egocentric'][good_idxs]
+        data['model_nsp'] = data['model_nsp'][good_idxs]
     
     ##### Splitting data for shifter, then split for model training #####
     if params['shifter_5050']==False:
@@ -551,6 +573,7 @@ def format_data(data, params, frac=.1, shifter_train_size=.5, test_train_size=.7
     if do_norm:
         data['model_vid_sm'] = (data['model_vid_sm'] - np.mean(data['model_vid_sm'],axis=0))/np.nanstd(data['model_vid_sm'],axis=0)
         data['model_vid_sm'][np.isnan(data['model_vid_sm'])]=0
+        
         data['model_th'] = (data['model_th'])/FM_move_avg[1,0] # np.nanstd(data['model_th'],axis=0) 
         data['model_phi'] = (data['model_phi'])/FM_move_avg[1,1] # np.nanstd(data['model_phi'],axis=0) 
         if params['free_move']:
@@ -561,6 +584,12 @@ def format_data(data, params, frac=.1, shifter_train_size=.5, test_train_size=.7
             if params['use_spdpup']:
                 data['model_speed'] = (data['model_speed']-FM_move_avg[0,4])/FM_move_avg[1,4]
                 data['model_eyerad'] = (data['model_eyerad']-FM_move_avg[0,5])/FM_move_avg[1,5]
+
+            if params['train_dir']:
+                data['model_head_dir'] = (data['model_head_dir'] - np.nanmean(data['model_head_dir'],axis=0))/np.nanstd(data['model_head_dir'],axis=0)
+                data['model_body_dir'] = (data['model_body_dir'] - np.nanmean(data['model_body_dir'],axis=0))/np.nanstd(data['model_body_dir'],axis=0)
+                data['model_mouse_x'] = (data['model_mouse_x'] - np.nanmean(data['model_mouse_x'],axis=0))/np.nanstd(data['model_mouse_x'],axis=0)
+                data['model_mouse_y'] = (data['model_mouse_y'] - np.nanmean(data['model_mouse_y'],axis=0))/np.nanstd(data['model_mouse_y'],axis=0)
         else:
             # data['model_roll'] = (0 - FM_move_avg[0,2])/FM_move_avg[1,2])
             data['model_pitch'] = (np.zeros(data['model_phi'].shape) - FM_move_avg[0,3])/FM_move_avg[1,3]
@@ -573,6 +602,11 @@ def format_data(data, params, frac=.1, shifter_train_size=.5, test_train_size=.7
             if params['use_spdpup']:
                 data['model_speed']  = (data['model_speed'])
                 data['model_eyerad'] = (data['model_eyerad'])
+            if params['train_dir']:
+                data['model_head_dir'] = (data['model_head_dir'])
+                data['model_body_dir'] = (data['model_body_dir'])
+                data['model_mouse_x'] = (data['model_mouse_x'])
+                data['model_mouse_y'] = (data['model_mouse_y'])
         else:
             data['model_pitch']  = (np.zeros(data['model_phi'].shape) - FM_move_avg[0,3])
 
