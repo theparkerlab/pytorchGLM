@@ -135,102 +135,140 @@ def format_pytorch_data(data,params,train_idx,test_idx):
        yte (torch.Tensor): test output data formatted for dataset
        meanbias (torch.Tensor): mean bias of output for setting initialization
     """
-    if params['free_move']:
-        if params['train_shifter']:
-            pos_train = np.hstack((data['train_th'][:, np.newaxis], data['train_phi'][:, np.newaxis],data['train_pitch'][:, np.newaxis]))
-            pos_test  = np.hstack((data['test_th'][:, np.newaxis], data['test_phi'][:, np.newaxis],data['test_pitch'][:, np.newaxis]))
-            model_pos = np.hstack((data['model_th'][:, np.newaxis], data['model_phi'][:, np.newaxis],data['model_pitch'][:, np.newaxis]))
-            params['shift_in'] = model_pos.shape[-1]
-            params['shift_out'] = model_pos.shape[-1]
-        else:
-            pos_train,pos_test,model_pos = [],[],[]
-            for key in params['position_vars']:
-                pos_train.append(data['train_'+key][:,np.newaxis])
-                pos_test.append(data['test_'+key][:,np.newaxis])
-                model_pos.append(data['model_'+key][:,np.newaxis])
-            pos_train = np.hstack(pos_train)
-            pos_test  = np.hstack(pos_test)
-            model_pos = np.hstack(model_pos)
+
+    if params['train_egocentric'] == False:
+        if params['free_move']:
+            if params['train_shifter']:
+                pos_train = np.hstack((data['train_th'][:, np.newaxis], data['train_phi'][:, np.newaxis],data['train_pitch'][:, np.newaxis]))
+                pos_test  = np.hstack((data['test_th'][:, np.newaxis], data['test_phi'][:, np.newaxis],data['test_pitch'][:, np.newaxis]))
+                model_pos = np.hstack((data['model_th'][:, np.newaxis], data['model_phi'][:, np.newaxis],data['model_pitch'][:, np.newaxis]))
+                params['shift_in'] = model_pos.shape[-1]
+                params['shift_out'] = model_pos.shape[-1]
+            else:
+                
+                    pos_train,pos_test,model_pos = [],[],[]
+                    
+                    for key in params['position_vars']:
+                        pos_train.append(data['train_'+key][:,np.newaxis])
+                        pos_test.append(data['test_'+key][:,np.newaxis])
+                        model_pos.append(data['model_'+key][:,np.newaxis])
+                    if params['train_dir']:
+                        for key in params['direction_vars']:
+                            pos_train.append(data['train_'+key][:,np.newaxis])
+                            pos_test.append(data['test_'+key][:,np.newaxis])
+                            model_pos.append(data['model_'+key][:,np.newaxis])
+                    pos_train = np.hstack(pos_train)
+                    pos_test  = np.hstack(pos_test)
+                    model_pos = np.hstack(model_pos)
+                    params['shift_in'] = 0
+                    params['shift_out'] = 0
+                
+
+        else: 
+            pos_train = np.hstack((data['train_th'][:, np.newaxis], data['train_phi'][:, np.newaxis], data['train_pitch'][:, np.newaxis], np.zeros(data['train_phi'].shape)[:, np.newaxis]))
+            pos_test  = np.hstack((data['test_th'][:, np.newaxis], data['test_phi'][:, np.newaxis], data['test_pitch'][:, np.newaxis], np.zeros(data['test_phi'].shape)[:, np.newaxis]))
+            model_pos = np.hstack((data['model_th'][:, np.newaxis], data['model_phi'][:, np.newaxis], data['model_pitch'][:, np.newaxis], np.zeros(data['model_phi'].shape)[:, np.newaxis]))
             params['shift_in'] = 0
             params['shift_out'] = 0
-    else: 
-        pos_train = np.hstack((data['train_th'][:, np.newaxis], data['train_phi'][:, np.newaxis], data['train_pitch'][:, np.newaxis], np.zeros(data['train_phi'].shape)[:, np.newaxis]))
-        pos_test  = np.hstack((data['test_th'][:, np.newaxis], data['test_phi'][:, np.newaxis], data['test_pitch'][:, np.newaxis], np.zeros(data['test_phi'].shape)[:, np.newaxis]))
-        model_pos = np.hstack((data['model_th'][:, np.newaxis], data['model_phi'][:, np.newaxis], data['model_pitch'][:, np.newaxis], np.zeros(data['model_phi'].shape)[:, np.newaxis]))
-        params['shift_in'] = 0
-        params['shift_out'] = 0
+            
+        ##### Save dimensions #####
+        params['nks'] = np.shape(data['train_vid'])[1:]
+        params['nk'] = params['nks'][0]*params['nks'][1]*params['nt_glm_lag']
         
-    ##### Save dimensions #####
-    params['nks'] = np.shape(data['train_vid'])[1:]
-    params['nk'] = params['nks'][0]*params['nks'][1]*params['nt_glm_lag']
-    if params['train_shifter']:
-        ##### Only take timepoints within quartile range for training shifter #####
-        rolled_vid = np.hstack([np.roll(data['model_vid_sm'], nframes, axis=0) for nframes in params['lag_list']])
-        if params['thresh_shifter']:
-            move_quantiles = np.quantile(model_pos,params['quantiles'],axis=0)
-            train_range = np.all(((pos_train>move_quantiles[0]) & (pos_train<move_quantiles[1])),axis=1)
-            test_range = np.all(((pos_test>move_quantiles[0]) & (pos_test<move_quantiles[1])),axis=1)
-            x_train = rolled_vid[train_idx].reshape((len(train_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)[train_range]
-            x_test = rolled_vid[test_idx].reshape((len(test_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)[test_range]
-            pos_train = pos_train[train_range]
-            pos_test = pos_test[test_range]
-            ytr = torch.from_numpy(data['train_nsp'][train_range].astype(np.float32))
-            yte = torch.from_numpy(data['test_nsp'][test_range].astype(np.float32))
-        else:
-            x_train = rolled_vid[train_idx].reshape((len(train_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)
-            x_test = rolled_vid[test_idx].reshape((len(test_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)
+        if params['train_shifter']:
+            ##### Only take timepoints within quartile range for training shifter #####
+            rolled_vid = np.hstack([np.roll(data['model_vid_sm'], nframes, axis=0) for nframes in params['lag_list']])
+            if params['thresh_shifter']:
+                move_quantiles = np.quantile(model_pos,params['quantiles'],axis=0)
+                train_range = np.all(((pos_train>move_quantiles[0]) & (pos_train<move_quantiles[1])),axis=1)
+                test_range = np.all(((pos_test>move_quantiles[0]) & (pos_test<move_quantiles[1])),axis=1)
+                x_train = rolled_vid[train_idx].reshape((len(train_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)[train_range]
+                x_test = rolled_vid[test_idx].reshape((len(test_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)[test_range]
+                pos_train = pos_train[train_range]
+                pos_test = pos_test[test_range]
+                ytr = torch.from_numpy(data['train_nsp'][train_range].astype(np.float32))
+                yte = torch.from_numpy(data['test_nsp'][test_range].astype(np.float32))
+            else:
+                x_train = rolled_vid[train_idx].reshape((len(train_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)
+                x_test = rolled_vid[test_idx].reshape((len(test_idx), params['nt_glm_lag'])+params['nks']).astype(np.float32)
+                ytr = torch.from_numpy(data['train_nsp'].astype(np.float32))
+                yte = torch.from_numpy(data['test_nsp'].astype(np.float32))
+        elif params['NoShifter']:
+            ##### Use raw video #####
+            if params['crop_input'] != 0:
+                model_vid_sm = data['model_vid_sm'][:,params['crop_input']:-params['crop_input'],params['crop_input']:-params['crop_input']]
+            rolled_vid = np.hstack([np.roll(model_vid_sm, nframes, axis=0) for nframes in params['lag_list']])
+            x_train = rolled_vid[train_idx].reshape(len(train_idx), -1).astype(np.float32)
+            x_test = rolled_vid[test_idx].reshape(len(test_idx), -1).astype(np.float32)
             ytr = torch.from_numpy(data['train_nsp'].astype(np.float32))
             yte = torch.from_numpy(data['test_nsp'].astype(np.float32))
-    elif params['NoShifter']:
-        ##### Use raw video #####
-        if params['crop_input'] != 0:
-            model_vid_sm = data['model_vid_sm'][:,params['crop_input']:-params['crop_input'],params['crop_input']:-params['crop_input']]
-        rolled_vid = np.hstack([np.roll(model_vid_sm, nframes, axis=0) for nframes in params['lag_list']])
-        x_train = rolled_vid[train_idx].reshape(len(train_idx), -1).astype(np.float32)
-        x_test = rolled_vid[test_idx].reshape(len(test_idx), -1).astype(np.float32)
-        ytr = torch.from_numpy(data['train_nsp'].astype(np.float32))
-        yte = torch.from_numpy(data['test_nsp'].astype(np.float32))
-        params['nks'] = np.shape(model_vid_sm)[1:]
-        params['nk'] = params['nks'][0]*params['nks'][1]*params['nt_glm_lag']
-    else: 
-        ##### Rework for new model format ######
-        # model_vid_sm_shift = ioh5.load(params['save_dir']/params['exp_name']/'ModelWC_shifted_dt{:03d}_ModelID{:d}.h5'.format(int(params['model_dt']*1000), 1))['model_vid_sm_shift']  # [:,5:-5,5:-5]
-        if params['crop_input'] != 0:
-            model_vid_sm_shift = data['model_vid_sm_shift'][:,params['crop_input']:-params['crop_input'],params['crop_input']:-params['crop_input']]
-        params['nks'] = np.shape(model_vid_sm_shift)[1:]
-        params['nk'] = params['nks'][0]*params['nks'][1]*params['nt_glm_lag']
-        rolled_vid = np.hstack([np.roll(model_vid_sm_shift, nframes, axis=0) for nframes in params['lag_list']]) 
-        x_train = rolled_vid[train_idx].reshape(len(train_idx), -1).astype(np.float32)
-        x_test = rolled_vid[test_idx].reshape(len(test_idx), -1).astype(np.float32)
+            params['nks'] = np.shape(model_vid_sm)[1:]
+            params['nk'] = params['nks'][0]*params['nks'][1]*params['nt_glm_lag']
+        else:
+            ##### Rework for new model format ######
+            if params['train_dir'] == False:
+                model_vid_sm_shift = ioh5.load(params['save_dir']/params['exp_name']/'ModelData_{}_dt{:03d}_rawWorldCam_{:d}ds.h5'.format(params['data_name_fm'],int(params['model_dt']*1000),int(params['downsamp_vid'])))['model_vid_sm_shift']  # [:,5:-5,5:-5]
+                if params['crop_input'] != 0:
+                    model_vid_sm_shift = data['model_vid_sm_shift'][:,params['crop_input']:-params['crop_input'],params['crop_input']:-params['crop_input']]
+                params['nks'] = np.shape(model_vid_sm_shift)[1:]
+                params['nk'] = params['nks'][0]*params['nks'][1]*params['nt_glm_lag']
+                rolled_vid = np.hstack([np.roll(model_vid_sm_shift, nframes, axis=0) for nframes in params['lag_list']]) 
+                x_train = rolled_vid[train_idx].reshape(len(train_idx), -1).astype(np.float32)
+                x_test = rolled_vid[test_idx].reshape(len(test_idx), -1).astype(np.float32)
 
-        ytr = torch.from_numpy(data['train_nsp'].astype(np.float32))
-        yte = torch.from_numpy(data['test_nsp'].astype(np.float32))
+                ytr = torch.from_numpy(data['train_nsp'].astype(np.float32))
+                yte = torch.from_numpy(data['test_nsp'].astype(np.float32))
 
-    ##### Convert to Tensors #####
-    if params['ModelID']==0:
-        xtr = torch.from_numpy(pos_train.astype(np.float32))
-        xte = torch.from_numpy(pos_test.astype(np.float32))
-        params['nks'] = np.shape(xtr)[1:]
-        params['nk'] = xtr.shape[-1]
-    else:
-        xtr = torch.from_numpy(x_train.astype(np.float32))
-        xte = torch.from_numpy(x_test.astype(np.float32))
-    xtr_pos = torch.from_numpy(pos_train.astype(np.float32))
-    xte_pos = torch.from_numpy(pos_test.astype(np.float32))
-    params['pos_features'] = xtr_pos.shape[-1]
-    params['Ncells'] = ytr.shape[-1]
+        ##### Convert to Tensors #####
+        if params['ModelID']==0:
+            
+            xtr = torch.from_numpy(pos_train.astype(np.float32))
+            xte = torch.from_numpy(pos_test.astype(np.float32))
+            params['nks'] = np.shape(xtr)[1:]
+            params['nk'] = xtr.shape[-1]
+
+            ytr = torch.from_numpy(data['train_nsp'].astype(np.float32))
+            yte = torch.from_numpy(data['test_nsp'].astype(np.float32))
+
+            
+
+            
+        else:
+            xtr = torch.from_numpy(x_train.astype(np.float32))
+            xte = torch.from_numpy(x_test.astype(np.float32))
+
+            
+        xtr_pos = torch.from_numpy(pos_train.astype(np.float32))
+        xte_pos = torch.from_numpy(pos_test.astype(np.float32))
+        params['pos_features'] = xtr_pos.shape[-1]
+        params['Ncells'] = ytr.shape[-1]
+        
+        if params['SimRF']:
+            SimRF_file = params['save_dir'].parent.parent.parent/'021522/SimRF/fm1/SimRF_withL1_dt050_T01_Model1_NB10000_Kfold00_best.h5'
+            SimRF_data = ioh5.load(SimRF_file)
+            ytr = torch.from_numpy(SimRF_data['ytr'].astype(np.float32))
+            yte = torch.from_numpy(SimRF_data['yte'].astype(np.float32))
+            params['save_model'] = params['save_model'] / 'SimRF'
+            params['save_model'].mkdir(parents=True, exist_ok=True)
+            meanbias = torch.from_numpy(SimRF_data['bias_sim'].astype(np.float32))
+        else:
+            meanbias = torch.mean(torch.tensor(data['model_nsp'], dtype=torch.float32), axis=0)
+        return xtr, xte, xtr_pos, xte_pos, ytr, yte, meanbias
     
-    if params['SimRF']:
-        SimRF_file = params['save_dir'].parent.parent.parent/'021522/SimRF/fm1/SimRF_withL1_dt050_T01_Model1_NB10000_Kfold00_best.h5'
-        SimRF_data = ioh5.load(SimRF_file)
-        ytr = torch.from_numpy(SimRF_data['ytr'].astype(np.float32))
-        yte = torch.from_numpy(SimRF_data['yte'].astype(np.float32))
-        params['save_model'] = params['save_model'] / 'SimRF'
-        params['save_model'].mkdir(parents=True, exist_ok=True)
-        meanbias = torch.from_numpy(SimRF_data['bias_sim'].astype(np.float32))
     else:
-        meanbias = torch.mean(torch.tensor(data['model_nsp'], dtype=torch.float32), axis=0)
-    return xtr, xte, xtr_pos, xte_pos, ytr, yte, meanbias
+        xtr = torch.from_numpy(data['train_egocentric'].astype(np.float32))
+        xte = torch.from_numpy(data['test_egocentric'].astype(np.float32))
+        ytr = torch.from_numpy(data['train_nsp'].astype(np.float32))
+        yte = torch.from_numpy(data['test_nsp'].astype(np.float32))
+        xtr_pos = torch.from_numpy(np.array([0]))
+        xte_pos = torch.from_numpy(np.array([0]))
+        meanbias = torch.from_numpy(np.array([0]))
+        params['pos_features'] = xtr_pos.shape[-1]
+        params['Ncells'] = ytr.shape[-1]
+        params['shift_in'] = 0
+        params['shift_out'] = 0
+        params['nk'] = xtr.shape[-1]
+        return xtr, xte, xtr_pos, xte_pos, ytr, yte, meanbias
 
 
 
