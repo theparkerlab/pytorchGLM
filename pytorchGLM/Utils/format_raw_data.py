@@ -303,7 +303,7 @@ def format_raw_data(file_dict, params, medfiltbins=11, **kwargs):
     return raw_data, goodcells
 
 
-def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
+def interp_raw_data(params,raw_data, align_t, model_dt=0.05, goodcells=None):
     """Interpolates raw data based on nested dictionary. 
 
     Args:
@@ -347,20 +347,20 @@ def interp_raw_data(raw_data, align_t, model_dt=0.05, goodcells=None):
                     else:
                         interp = interp1d(raw_data[key0][key0+'TS'],pd.DataFrame(raw_data[key0][key1]).interpolate(limit_direction='both').to_numpy().squeeze(),axis=0, bounds_error=False)
                         model_data['model_'+ key1] = interp(model_t+model_dt/2)
-    
-    for key0 in raw_data.keys():
-            for key1 in raw_data[key0].keys():
-                if 'egocentric' in key1:
-                    ego_data = raw_data['top']['egocentric']
-                    mean_ego = np.mean(ego_data,axis=0) 
-                    std_ego = np.std(ego_data,axis=0)
-                    ego_data_z = (ego_data - mean_ego)/std_ego
-                    raw_data['top']['egocentric'] = ego_data_z
-                    align_t = raw_data['top']['topTS']
-                    model_t = np.linspace(0,np.nanmax(align_t),raw_data['top']['egocentric'].shape[0])
-                    interp = interp1d(raw_data[key0][key0+'TS'],pd.DataFrame(raw_data[key0][key1]).interpolate(limit_direction='both').to_numpy().squeeze(),axis=0, bounds_error=False)
-                    temp = interp(model_t+0.016/2)
-                    model_data['model_'+key1] = temp
+    if params['train_egocentric']:
+        for key0 in raw_data.keys():
+                for key1 in raw_data[key0].keys():
+                    if 'egocentric' in key1 or 'gz' in key1:
+                        ego_data = raw_data['top']['egocentric']
+                        mean_ego = np.mean(ego_data,axis=0) 
+                        std_ego = np.std(ego_data,axis=0)
+                        ego_data_z = (ego_data - mean_ego)/std_ego
+                        raw_data['top']['egocentric'] = ego_data_z
+                        align_t = raw_data['top']['topTS']
+                        model_t = np.linspace(0,np.nanmax(align_t),raw_data['top']['egocentric'].shape[0])
+                        interp = interp1d(raw_data[key0][key0+'TS'],pd.DataFrame(raw_data[key0][key1]).interpolate(limit_direction='both').to_numpy().squeeze(),axis=0, bounds_error=False)
+                        temp = interp(model_t+0.016/2)
+                        model_data['model_'+key1] = temp
     
     model_data['model_t'] = model_t
     if ('acc' in raw_data.keys()) & (np.size(raw_data['acc']['gz'])>0):
@@ -430,7 +430,7 @@ def load_aligned_data(file_dict, params, reprocess=False):
     else:
         
             raw_data, goodcells = format_raw_data(file_dict,params)
-            model_data = interp_raw_data(raw_data,raw_data['vid']['vidTS'],model_dt=params['model_dt'],goodcells=goodcells)
+            model_data = interp_raw_data(params,raw_data,raw_data['vid']['vidTS'],model_dt=params['model_dt'],goodcells=goodcells)
             if params['free_move']:
                 ##### Saving average and std of parameters for centering and scoring across conditions #####
                 FM_move_avg = np.zeros((2,6))
